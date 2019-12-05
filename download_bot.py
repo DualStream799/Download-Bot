@@ -7,16 +7,18 @@ import shutil
 import json
 import time
 import os
+import re
 
 class Download_Bot:
     """"""
     # Class Initialization:
     def __init__(self, client_status=False):
-        # Importing Libraries:
-
-        # Structural Variables:
+        """Initializes all variables and executes all base commands"""
+        # Filename Variables:
         self.database_filename = "download_bot_database"
         self.client_filename = "client_database"
+        
+        # Structural Variables:
         self.database_structure = {"Anime_Data_Partition":{},
                                    "Analysis_Partition":{}}
         self.anime_data_structure = {"page_url":"",
@@ -29,27 +31,36 @@ class Download_Bot:
                                         "total_enlapsed_time":0,
                                         "errors_detected":0,
                                         "enlapsed_time_records":[]}
+        
+        # Class Global Variables:        
+        self.database = self.check_database(self.database_filename)
+        self.home_page_url = 'https://saikoanimes.net/'
+        self.root_folder = "Animes by Download Bot"
+        self.acess_amount = 0
+        self.acess_limit = 1000
+        self.client_status = client_status
+        
         # Path Variables:
         self.current_path = os.getcwd()
         self.user_path = self.find_user_path(self.current_path)
         self.download_path = self.user_path + 'Downloads'
         self.video_path = self.user_path + 'Videos'
-        # Class Global Variables:
-        self.database = self.check_database(self.database_filename)
-        self.home_page_url = 'https://saikoanimes.net/'
-        self.acess_amount = 0
-        self.acess_limit = 1000
-        self.client_status = client_status
-        # Client Variables:
-        if self.client_status == True:
+        
+        # Base Commands:
+        self.check_anime_root_folder(self.root_folder)
+        self.check_twillio_credentials(self.client_filename)            
+        
+    # WhatsApp Messaging using Twilio Sandbox:
+    def check_twillio_credentials(self, credentials_filename):
+        """Checks if there's a file with twillio API's developer credentials"""
+        if credentials_filename+".json" in os.listdir(self.current_path+'/..'):
             client_database = self.load_database(self.client_filename)
             self.to_number = client_database['to_number']
             self.from_number = client_database['from_number']
-            self.client = Client()
-            #self.client = Client(client_database['twilio_account_sid'], client_database['twilio_auth_token'])
-        
-    # WhatsApp Messaging using Twilio Sandbox:
+            self.client = Client(client_database['twilio_account_sid'], client_database['twilio_auth_token'])
+    
     def whatsapp_send_message(self, message, to_number, from_number, mode=None):
+        """Uses Twillio Ap"""
         message = self.client.messages.create(body=message, to="whatsapp:+"+to_number, from_="whatsapp:+"+from_number)
         if mode == 'display': print(message.sid)
     
@@ -134,6 +145,11 @@ class Download_Bot:
         self.database['Analysis_Partition'] = data_copy
         
     # Path Manipulation Methods (Use paths to find files and folders):
+    def check_anime_root_folder(self, folder_name):
+        """Checks if the root folder exists (if not creates a new one)"""
+        if folder_name not in os.listdir(self.video_path):
+            os.mkdir(self.video_path+"/"+folder_name)
+        
     def find_file_by_type(self, file_type, path):
         """Find all files with a certain file type"""
         return [filename for filename in os.listdir(path) if filename.endswith(file_type) == True]
@@ -208,6 +224,15 @@ class Download_Bot:
         else:
             return file_name_string
         
+    def convert_filename_to_anime_name(self, filename):
+        """Converts a filename string to the correspondent anime name string (deals with unecessary episode values not filtered)"""
+        clean_string = filename.split(']')[1].split('[')[0].split('_-_')[0][1:]
+        ep_num_match = re.search('_\d*_', clean_string)
+        if ep_num_match is not None:
+            ep_num_match = ep_num_match .group()
+            clean_string = clean_string.split(ep_num_match)[0]
+        return clean_string.replace("_", " ")
+    
     # Manual Override (Manually execute entire commands):
     def manual_insert(self, url):
         """Manually creates a new anime section"""
@@ -239,16 +264,16 @@ class Download_Bot:
         """Closes Firefox browser under Selenium webdriver's control"""
         driver.quit()   
     
-    def main(self, mode='download'):
+    def main(self, driver_mode='auto', mode='download'):
         # initializes time counter:
         timer = time.time()
-        # Opens Firefox browser under Selenium webdriver's control:
-        driver = self.driver_start_firefox()
+        if driver_mode == 'auto':
+        	# Opens Firefox browser under Selenium webdriver's control:
+        	driver = self.driver_start_firefox()
+        else:
+        	driver = driver_mode
         # Acesses Saiko Animes' home page and extracts all new anime links:
         new_animes = self.acess_home_page(driver)
-        #del new_animes[new_animes.index('https://saikoanimes.net/diamond-no-ace-act-ii-33/')]
-        link = 'https://saikoanimes.net/diamond-no-ace-act-ii-33/'
-        del new_animes[new_animes.index(link)]
         # Open a new tab:
         self.open_new_tab(driver)
         self.open_new_tab(driver)
@@ -263,8 +288,9 @@ class Download_Bot:
             if self.acess_amount > self.acess_limit:
                 if mode == 'display': print("Chunk Limit Exceeded")
                 break
-        # Closes the window's browser:
-        driver.quit()
+        if driver_mode == 'auto':
+		    # Closes the window's browser:
+		    driver.quit()
         # Finishes the timer:
         enlapsed_time = time.time() - timer
         # Updates analysis counters:
@@ -313,7 +339,7 @@ class Download_Bot:
             driver.get(page_url)
             # Gets the redirected url (correct url for anime name extraction):
             page_url = driver.current_url
-            
+            time.sleep(10)
             if mode == 'display': print(page_url)
             # Extracts the anime name from the page's url:
             anime_name = self.convert_page_to_name(page_url)
